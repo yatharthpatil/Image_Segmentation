@@ -1,0 +1,114 @@
+class image_segment(keras.Model):
+
+
+  def __init__(self,image_h,image_w,widths,block_depth):
+    super().__init__()
+
+    self.normalizer = layers.Normalization()
+    self.network = Network(image_h,image_w,widths,block_depth)
+    self.ema_network = keras.models.clone_model(self.network)
+
+
+  def compile(self,**kwargs):
+    super().compile(**kwargs)
+    # self.dice = dice(name = "dice_track")
+    self.loss_tracker = keras.metrics.Mean(name = "t_loss")
+
+  @property
+  def metric(self):
+    return [self.loss_tracker]
+
+  # def cal_loss(self, image, segment):
+  #   segment = tf.cast(segment, dtype=tf.float32)
+  #   image = tf.cast(image, dtype=tf.float32)
+
+  #   epsilon = 1e-7  # Small constant to prevent division by zero
+
+  #   # Calculate dice coefficient for each class
+  #   inter = tf.reduce_sum(segment * image, axis=[1,2])  # Sum along height and width axes
+  #   union = tf.reduce_sum(segment, axis=[1,2]) + tf.reduce_sum(image, axis=[1,2]) + epsilon
+
+  #   dice_per_class = (2.0 * inter) / union
+
+  #   # Compute the overall dice loss (you can choose to weight different classes differently)
+  #   dice_loss = 1.0 - tf.reduce_mean(dice_per_class)
+
+  #   return dice_loss
+
+
+
+  def train_model(self,image,training):
+    if training:
+      network = self.network
+    else:
+      network = self.ema_network
+
+    pred_image = network(image,training = training)
+    return pred_image
+
+
+  def train_step(self,data):
+    image, mask = data
+    image = self.normalizer(image, training = True)
+
+    with tf.GradientTape() as tape:
+      pred_image = self.train_model(image,training = True)
+      pred_image = tf.reshape(pred_image,[200,400,8])
+      image_loss = self.compiled_loss(mask,pred_image)
+
+    gradients = tape.gradient(image_loss,self.network.trainable_weights)
+    self.optimizer.apply_gradients(zip(gradients,self.network.trainable_weights))
+
+    self.loss_tracker.update_state(image_loss)
+    # self.dice.update_state(pred_image,mask)
+
+    for weight, ema_weight in zip(self.network.weights, self.ema_network.weights):
+      ema_weight.assign(ema*ema_weight + (1-ema)*weight)
+
+    return {m.name: m.result() for m in self.metrics}
+
+  def test_step(self,data):
+    image,mask = data
+    image = self.normalizer(image, training = True)
+
+    pred_image = self.train_model(image,training = False)
+    pred_image = tf.reshape(pred_image,[200,400,8])
+
+    image_loss = self.compiled_loss(mask,pred_image)
+
+    self.loss_tracker.update_state(image_loss)
+
+    # self.dice.update_state(pred_image,mask)
+    return {m.name: m.result() for m in self.metrics}
+
+############ here model is defined and in the next step we are training it using model.fit
+
+
+model = image_segment(image_h,image_w,widths,block_depth)
+model.compile(
+    optimizer=keras.optimizers.experimental.AdamW(
+        learning_rate=learning_rate, weight_decay=weight_decay
+    ),
+    loss="sparse_categorical_crossentropy", metrics=["accuracy"],
+)
+
+checkpoint_path = "/content/drive/MyDrive/DDIM_third/"
+checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+    filepath=checkpoint_path,
+    save_weights_only=True,
+    save_best_only=True,
+)
+
+# model.normalizer.adapt(train_dataset)
+
+# run training and plot generated images periodically
+
+# model.fit(
+#     train_image,
+#     train_mask,
+#     epochs=epoch,
+#     validation_data=(val_image, val_mask),
+#     callbacks=[checkpoint_callback],
+#     batch_size=batch_size,  # Set batch_size to match your dataset's batch size
+# )
+
