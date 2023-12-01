@@ -18,24 +18,6 @@ class image_segment(keras.Model):
   def metric(self):
     return [self.loss_tracker]
 
-  # def cal_loss(self, image, segment):
-  #   segment = tf.cast(segment, dtype=tf.float32)
-  #   image = tf.cast(image, dtype=tf.float32)
-
-  #   epsilon = 1e-7  # Small constant to prevent division by zero
-
-  #   # Calculate dice coefficient for each class
-  #   inter = tf.reduce_sum(segment * image, axis=[1,2])  # Sum along height and width axes
-  #   union = tf.reduce_sum(segment, axis=[1,2]) + tf.reduce_sum(image, axis=[1,2]) + epsilon
-
-  #   dice_per_class = (2.0 * inter) / union
-
-  #   # Compute the overall dice loss (you can choose to weight different classes differently)
-  #   dice_loss = 1.0 - tf.reduce_mean(dice_per_class)
-
-  #   return dice_loss
-
-
 
   def train_model(self,image,training):
     if training:
@@ -46,6 +28,7 @@ class image_segment(keras.Model):
     pred_image = network(image,training = training)
     return pred_image
 
+# this is our training step. here we normalize our image and then pass it to the unet++ for forwward pass. then gradients are calculated. the optimizer RMSprop is used for backpropagation.
 
   def train_step(self,data):
     image, mask = data
@@ -53,7 +36,7 @@ class image_segment(keras.Model):
 
     with tf.GradientTape() as tape:
       pred_image = self.train_model(image,training = True)
-      pred_image = tf.reshape(pred_image,[200,400,8])
+      pred_image = tf.reshape(pred_image,[128,128,2])
       image_loss = self.compiled_loss(mask,pred_image)
 
     gradients = tape.gradient(image_loss,self.network.trainable_weights)
@@ -67,12 +50,14 @@ class image_segment(keras.Model):
 
     return {m.name: m.result() for m in self.metrics}
 
+# this is the validation step
+
   def test_step(self,data):
     image,mask = data
     image = self.normalizer(image, training = True)
 
     pred_image = self.train_model(image,training = False)
-    pred_image = tf.reshape(pred_image,[200,400,8])
+    pred_image = tf.reshape(pred_image,[128,128,2])
 
     image_loss = self.compiled_loss(mask,pred_image)
 
@@ -81,18 +66,35 @@ class image_segment(keras.Model):
     # self.dice.update_state(pred_image,mask)
     return {m.name: m.result() for m in self.metrics}
 
-############ here model is defined and in the next step we are training it using model.fit
 
 
+# here we will state the optimizer and loss function
+
+# here we convert the imput list to tensors, as input to the model is in the form of tensors and not list
+
+train_image = tf.convert_to_tensor(train_image)
+train_mask = tf.convert_to_tensor(train_mask)
+val_image = tf.convert_to_tensor(val_image)
+val_mask = tf.convert_to_tensor(val_mask)
+
+print(train_mask.shape)
+
+# Here we are compiling and training the model. we are using sparse categoical crossentropy as loss.
+
+from tensorflow.keras.optimizers import RMSprop
+
+# rmsprop = RMSprop(learning_rate=1e-7, rho=0.9)
+learning_rate = 1e-6
+weight_decay = 1e-4
 model = image_segment(image_h,image_w,widths,block_depth)
+
 model.compile(
-    optimizer=keras.optimizers.experimental.AdamW(
-        learning_rate=learning_rate, weight_decay=weight_decay
-    ),
+        optimizer=keras.optimizers.experimental.AdamW(
+        learning_rate=learning_rate, weight_decay=weight_decay),
     loss="sparse_categorical_crossentropy", metrics=["accuracy"],
 )
 
-checkpoint_path = "/content/drive/MyDrive/DDIM_third/"
+checkpoint_path = "/content/drive/MyDrive/DL_pro/"
 checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
     filepath=checkpoint_path,
     save_weights_only=True,
@@ -103,12 +105,12 @@ checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
 
 # run training and plot generated images periodically
 
-# model.fit(
-#     train_image,
-#     train_mask,
-#     epochs=epoch,
-#     validation_data=(val_image, val_mask),
-#     callbacks=[checkpoint_callback],
-#     batch_size=batch_size,  # Set batch_size to match your dataset's batch size
-# )
+model.fit(
+    train_image,
+    train_mask,
+    epochs=epoch,
+    validation_data=(val_image, val_mask),
+    callbacks=[checkpoint_callback],
+    batch_size=batch_size,  # Set batch_size to match your dataset's batch size
+)
 
