@@ -1,4 +1,4 @@
-# importing Libraries
+# imorting necessary library
 
 import numpy as np
 import tensorflow as tf
@@ -9,98 +9,102 @@ import os
 import glob
 import matplotlib.pyplot as plt
 
-# Data Reading and Generation with Data Visualisation
+# here we are getting all the precomputed dataset, In this project i am implementing Faster RCNN for locating a box for lesions. For the first phase i used mannualy 
+# cropped images for testing my model
 
-path = '/content/drive/MyDrive/images'
+import os
+import glob
+import numpy as np
+
+
+path = '/content/drive/MyDrive/DL_pro_dataset/'
 temp = os.path.join(path,'*.npy')
 images = glob.glob(temp)
 
-
-data = [0 for i in range(5)]
-data_mask = [0 for i in range(5)]
-for img in images:
-  tokens = img.split('_')
-  # print(tokens)
-  if (tokens[-1]) == 'label.npy':
-    token = tokens[0].split('/')
-    data_mask[int(token[-1])-1] = tf.expand_dims(np.load(img), axis = 2)
-  else:
-    # img_temp = np.load(img)
-    # img_temp = tf.expand_dims(img_temp,axis = 2)
-    token = tokens[0].split('.')
-    token1 = token[0].split('/')
-    data[int(token1[-1])-1] = tf.expand_dims(np.load(img),axis = 2)
-
-
-print(len(data))
-print(len(data_mask))
-
-
-
-plt.figure(figsize=(20,20))
-for i in range(5):
-  plt.subplot(1,5,i+1)
-  plt.imshow(data[i],cmap = 'gray')
-  plt.axis('off')
-
-
-cmap = plt.cm.get_cmap('jet', 8)
-plt.figure(figsize=(20,20))
-for i in range(5):
-  plt.subplot(1,5,i+1)
-  plt.imshow(data_mask[i],cmap = cmap)
-  plt.axis('off')
-
-plt.imshow(data[0],cmap = 'gray')
-plt.imshow(data_mask[0],cmap = cmap , alpha = 0.5)
-plt.axis('off')
-plt.show()
-
-
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-
-data_f = []
-
-for i in range(5):
-  data_f.append(tf.concat([data[i],data_mask[i]], axis = 2))
-
-data_f = np.stack(data_f)
-
-datagen = ImageDataGenerator(
-    rotation_range=10,
-    width_shift_range=0.2,
-    height_shift_range=0.2,
-    shear_range=0.1,
-    zoom_range=0.2,
-    horizontal_flip=True,
-    vertical_flip = True,
-    fill_mode='nearest',
-)
-
-generator = datagen.flow(data_f)
-
-image = []
 mask = []
-for i,gen in enumerate(generator):
-  for j in range(5):
-    image.append(tf.cast(gen[j,:,:,0],dtype = tf.int32))
-    mask.append(tf.cast(gen[j,:,:,1],dtype = tf.int32))
+image = []
 
-  if i > 50:
-    break
-print(len(image))
+for img in images:
+  # print(np.load(img,allow_pickle = True).shape)
+  temp1  = np.load(img,allow_pickle = True)
+  for i in range(len(temp1)):
 
-print(image[0].shape)
+
+    mask.append(tf.pad(temp1[i][:,:,0],([[4,4],[4,4]])))
+    image.append(tf.pad(temp1[i][:,:,1],([[4,4],[4,4]])))
+
+# image visualization
+
+plt.imshow(image[69],cmap = 'gray' )
+plt.imshow(mask[69],alpha = 0.5)
+plt.axis('off')
 print(mask[0].shape)
 
-plt.imshow(image[0],cmap='gray')
-plt.imshow(mask[0],cmap = cmap, alpha = 0.5)
-plt.axis('off')
-plt.show()
+plt.imshow(image[69],cmap = 'gray' )
+print(len(mask))
+print(len(image))
 
-# Data set creation
+# training and validation dataset split
 
-train_image = image[:200]
-train_mask = mask[:200]
-val_image = image[200:260]
-val_mask = mask[200:260]
+# here we are taking out randomly choosen 25 images and mask for validation
+
+mask = np.array(mask)
+image = np.array(image)
+
+mask = mask.tolist()
+image = image.tolist()
+
+r = [np.random.randint(0,571) for i in range(25)]
+
+val_image = []
+val_mask = []
+train_mask = []
+train_image = []
+
+for i in range(25):
+  val_image.append(image[r[i]])
+  val_mask.append(mask[r[i]])
+  image.pop(r[i])
+  mask.pop(r[i])
+
+# here we are taking out randomly choosen 25 images and mask for validation
+
+mask = np.array(mask)
+image = np.array(image)
+
+mask = mask.tolist()
+image = image.tolist()
+
+r = [np.random.randint(0,571) for i in range(25)]
+
+val_image = []
+val_mask = []
+train_mask = []
+train_image = []
+
+for i in range(25):
+  val_image.append(image[r[i]])
+  val_mask.append(mask[r[i]])
+  image.pop(r[i])
+  mask.pop(r[i])
+
+# print(image_f[0].shape)
+# adding noise to the images randomly
+
+for i in range(len(image)):
+  flag = np.random.uniform(0,1)
+  noise = np.random.normal(0,30,(128,128))
+
+  if flag > 0.7:
+    image[i] = tf.clip_by_value(image[i] + noise,0,255)
+# here we are changing the classes and images to integer values
+
+image = tf.cast(image, dtype = tf.int32)
+mask = tf.cast(mask,dtype = tf.int32)
+val_image = tf.cast(val_image, dtype = tf.int32)
+val_mask = tf.cast(val_mask, dtype = tf.int32)
+
+train_image = image
+train_mask = mask
+
+
