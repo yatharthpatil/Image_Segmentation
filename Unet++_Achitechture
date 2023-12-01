@@ -1,4 +1,6 @@
-# this is the residual block of our Unet. here we perform two convolution operation.and batchnormalizatin
+from keras.src.layers.attention.multi_head_attention import activation
+
+# this is the residual block of our Unet. here we perform two convolution operation and three dilated convolution with rate 3,5,7.and batchnormalizatin
 def residual_block(width):
   def apply(x):
     size = x.shape[3]
@@ -9,8 +11,11 @@ def residual_block(width):
 
     x = layers.BatchNormalization(center = False, scale = False) (x)
     x = layers.Conv2D(width, kernel_size= 3 , padding='same',activation= 'relu')(x)
+    l1 = layers.Conv2D(width, kernel_size = 3, padding='same', dilation_rate = 3,activation = 'relu')(x)
+    l2 = layers.Conv2D(width, kernel_size = 3, padding = 'same', dilation_rate = 5,activation = 'relu')(x)
+    l3 = layers.Conv2D(width, kernel_size = 3, padding = 'same', dilation_rate = 7,activation = 'relu')(x)
     x = layers.Conv2D(width, kernel_size= 3 , padding='same')(x)
-    x = layers.Add()([x,residual])
+    x = layers.Add()([x,residual,l1,l2,l3])
     return x
   return apply
 
@@ -95,17 +100,25 @@ def Network(image_h,image_w, widths, block_depth):
   for _ in range(block_depth):
     x = residual_block(widths[-1])(x)
 
+# here we are generating skip connections
   skips.reverse()
   skips = skip_final(skips)
-  # for i in range(len(skips)):
-    # print(skips[i].shape)
   skips.reverse()
+
+# here i am adding a new layer at the bottle neck, after finding that results depend on the filters present at the bottle neck
+  x_0 = layers.Conv2D(512, kernel_size = 1, padding='same',activation = 'relu')(x)
+  x_1 = layers.Conv2D(512, kernel_size = 3, padding='same',activation = 'relu')(x)
+  x_2 = layers.Conv2D(512, kernel_size = 5, padding='same',activation = 'relu')(x)
+  x_3 = layers.Conv2D(512, kernel_size = 7, padding='same',activation = 'relu')(x)
+  x = layers.Add()([x_0,x_1,x_2,x_3,x])
+
+# from here upsampling is starting
 
   for width in reversed(widths[:-1]):
     x = decoder_block(width,block_depth)([x,skips])
 
 
-  x = layers.Conv2D(8,kernel_size = 3,padding = 'same' ,activation= 'softmax' )(x)
+  x = layers.Conv2D(2,kernel_size = 3,padding = 'same' ,activation= 'softmax' )(x)
   # x = tf.argmax(x,axis = -1)
 
 
